@@ -1,0 +1,100 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+
+#define RXD1 16
+#define TXD1 17
+#define SEND_INTERVAL 1000 // Gửi dữ liệu mỗi 1 giây
+
+
+// WiFi thông tin
+const char* ssid = "name_wifi(nhapvo)";
+const char* password = "pass(nhapvo)";
+
+
+// Địa chỉ server Flask
+const char* serverName = "http://diachiIPserverflask(nhapvo)/api/rain-data"; //IP Server Flash thay đồi theo đỉa chỉ kết nối wifi.
+
+
+String rainLevel = ""; // Biến lưu mức độ mưa
+unsigned long previousMillis = 0;
+
+
+void setup() {
+  Serial.begin(115200);
+  Serial1.begin(115200, SERIAL_8N1, RXD1, TXD1);
+
+
+  // Kết nối WiFi
+  WiFi.begin(ssid, password);
+  Serial.println("Connecting to WiFi");
+ 
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+ 
+  Serial.println("");
+  Serial.println("Connected to WiFi");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+void loop() {
+  // Đọc dữ liệu từ STM32 liên tục
+  while (Serial1.available()) {
+    char receivedChar = Serial1.read();
+   
+    // Chuyển đổi ký tự thành mức độ mưa
+    if (receivedChar == 'A') {
+      rainLevel = "Light Rain";
+    } else if (receivedChar == 'B') {
+      rainLevel = "Heavy Rain";
+    } else if (receivedChar == 'C') {
+      rainLevel = "No Rain";
+    } else {
+      Serial.println("Invalid data received");
+      return;
+    }
+   
+    Serial.println("Current rain level: " + rainLevel);
+  }
+
+
+  // Kiểm tra thời gian để gửi dữ liệu lên server
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= SEND_INTERVAL) {
+    previousMillis = currentMillis;
+   
+    if(WiFi.status() == WL_CONNECTED && rainLevel != "") {
+      HTTPClient http;
+     
+      // Bắt đầu kết nối tới server
+      http.begin(serverName);
+      http.addHeader("Content-Type", "application/json");
+     
+      // Tạo JSON data
+      String jsonData = "{\"rain_value\":\"" + rainLevel + "\"}";  // Sử dụng "rain_value"
+     
+      // Gửi POST request
+      int httpResponseCode = http.POST(jsonData);
+     
+      if (httpResponseCode > 0) {
+        String response = http.getString();
+        Serial.println("HTTP Response code: " + String(httpResponseCode));
+        Serial.println("Response: " + response);
+      }
+      else {
+        Serial.print("Error code: ");
+        Serial.println(httpResponseCode);
+      }
+     
+      // Giải phóng resources
+      http.end();
+    }
+    else {
+      Serial.println("WiFi Disconnected or No rain data");
+    }
+  }
+}
